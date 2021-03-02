@@ -87,7 +87,53 @@ const patch = (n1, n2, container, anchor = null, parentComponent = null, parentS
 
 - n1 == null，走挂载组件的逻辑：mountComponent
   - 创建组件实例：createComponentInstance
+
+    - 定义 instance 对象，并设置了许多属性
+    - 初始化组件上下文、根组件指针、派发事件方法
+
   - 设置组件实例：setupComponent
+
+    - 从 vnode 拿到 props, children, shapeFlag 属性
+
+    - 初始化 props 和 slots
+
+    - 判断是否是有状态的组件，如果是则执行 setupStatefulComponent 方法
+
+      - 创建渲染上下文代理 instance.proxy
+
+        - new Proxy(instance.ctx, PublicInstanceProxyHandlers)
+        - 当访问渲染上下文(instance.ctx)里面的属性时，就会进入 PublicInstanceProxyHandlers 的 get 函数
+        - 当修改渲染上下文里的属性时，会进入 set 函数
+        - 当判断属性是否存在渲染上下文中时，进入 has 函数
+
+      - 判断处理 setup 函数
+
+        - 创建 setup 函数上下文 setupContext 
+
+          ```javascript
+          function createSetupContext (instance) {
+            return {
+              attrs: instance.attrs,
+              slots: instance.slots,
+              emit: instance.emit
+            }
+          }
+          ```
+
+        - 执行并获取 setup 结果 setupResult 
+
+          执行 callWithErrorHandling 
+
+        - 处理执行结果 handleSetupResult
+
+          - setupResult  是对象的时候，把它变成响应式的并赋值给 instance.setupState (这里就在 **setup 函数和模板渲染间建立了联系**)
+          - setupResult  是函数的时候，把它作为组件的渲染函数 instance.render
+
+      - 完成组件实例设置 finishComponentSetup
+
+        - 标准化模板或渲染函数
+        - 兼容 Vue2 的options API：applyOptions
+
   - 设置并**运行**带副作用的渲染函数：setupRenderEffect
     - 它会创建响应式的副作用渲染函数，内部通过 effect 函数创建了一个副作用渲染函数 componentEffect
     - 它内部会判断是初始渲染，还是更新组件
@@ -130,8 +176,13 @@ const patch = (n1, n2, container, anchor = null, parentComponent = null, parentS
   - 通过 patchChildren 更新子节点
     - 如果新旧节点类型不同，先删除旧节点 unmountChildren
     - 如果新旧节点都是数组，则通过 patchKeyedChildren 函数做完整的 diff
-
-
+      - 同步头部节点，通过 isSameVNodeType 判断节点是否相同，若相同递归执行 patch 更新节点
+      - 同步尾部节点，同上一步
+      - 上两步走完以后还有三种情况：
+        - 新子节点有剩余，则添加新节点：patch(null,...)
+        - 旧子节点有剩余，则删除旧节点：unmount()
+        - 未知子序列
+          - 最长递增子序列(贪心 + 二分查找 算法)
 
 ## Tips
 
@@ -143,4 +194,5 @@ const patch = (n1, n2, container, anchor = null, parentComponent = null, parentS
   - 父组件数据变化
     - 父组件在更新过程中遇到子组件节点，先判断子组件是否需要更新，如果是则主动调用子组件的重新渲染方法，这时 next = 新的子组件 vnode
 - processComponent 处理组件 vnode 本质上是判断子组件是否需要更新，如果需要则递归执行子组件的副作用渲染函数来更新
+- 访问 key 相同的数据时，会优先返回 setup 里的内容，如果没有才返回 data 里的数据；当设置相同 key 的属性值时，也是优先设置 setup 里的值
 
